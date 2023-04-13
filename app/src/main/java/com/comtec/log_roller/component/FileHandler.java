@@ -116,7 +116,7 @@ public class FileHandler {
         Calendar lastModifiedDate = Calendar.getInstance();
         lastModifiedDate.setTimeInMillis(backupFile.lastModified());
         String year = "" + lastModifiedDate.get(Calendar.YEAR);
-        String month = "" + lastModifiedDate.get(Calendar.MONTH);
+        String month = "" + (lastModifiedDate.get(Calendar.MONTH) + 1);
         String date = "" + lastModifiedDate.get(Calendar.DATE);
 
         log.debug("last modified, year:{}, month:{}, day:{}", year, month, date);
