@@ -2,6 +2,10 @@ package com.comtec.log_roller.component;
 
 import java.io.File;
 import java.io.FileFilter;
+import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
@@ -20,12 +24,13 @@ public class FileHandler {
 
     private String originDir = properties.getString("logfile.origin.dir");
     private String backupDir = properties.getString("logfile.backup.dir");
+    private String backupDirPart = properties.getString("logfile.backup.dir.part");
 
     private boolean extensionFilter = properties.getBoolean("logfile.extension.filter");
     private String extensionType = properties.getString("logfile.extension.type");
 
-    private int originDay = properties.getInt("logfile.origin.hold.day");
-    private int backupDay = properties.getInt("logfile.backup.hold.day");
+    private int originCopyDay = properties.getInt("logfile.origin.copy.day");
+    private int originHoldDay = properties.getInt("logfile.origin.hold.day");
 
     /**
      * 파일 핸들러 싱글턴 객체 반환
@@ -37,10 +42,10 @@ public class FileHandler {
     }
 
     /**
-     * 원본 로그 파일 삭제
+     * 원본 로그 파일 복제
      */
-    public void moveFile() {
-        log.info("moveFile(): executed.");
+    public void copyFile() {
+        log.info("copyFile(): executed.");
 
         // 백업 디렉토리가 없는 경우 생성한다
         if (!new File(backupDir).exists()) {
@@ -52,36 +57,42 @@ public class FileHandler {
         for (String dir : getSplitedStrings(originDir, ";")) {
             File directory = new File(getSlashEndedString(dir));
             sourceFiles = Stream
-                    .concat(sourceFiles.stream(), getFilesToHandle(directory, originDay).stream())
+                    .concat(sourceFiles.stream(), getFilesToHandle(directory, originCopyDay).stream())
                     .toList();
         }
 
         // 백업 파일 생성
         sourceFiles.stream().forEach(file -> {
 
-            File targetFile = new File(getSlashEndedString(backupDir) + file.getName());
+            File targetFile = new File(getBackupDir(file) + file.getName());
 
-            log.info("{} {}", file.getName(), targetFile.getAbsolutePath());
+            log.debug("{} {}", file.getName(), targetFile.getAbsolutePath());
 
-            file.renameTo(targetFile);
+            try {
+                Files.copy(file.toPath(), targetFile.toPath(), StandardCopyOption.COPY_ATTRIBUTES);
+            } catch (FileAlreadyExistsException e) {
+                log.debug("copyFile(): {} File already exists", file.getName());
+            } catch (IOException e) {
+                log.error("copyFile(): {}", e.toString());
+            }
         });
 
-        log.info("moveFile(): move {} log file(s)", sourceFiles.size());
-        log.info("moveFile(): moved files {}", sourceFiles.toString());
+        log.info("copyFile(): copy {} log file(s)", sourceFiles.size());
+        log.info("copyFile(): copied files {}", sourceFiles.toString());
     }
 
     /**
-     * 백업된 로그 파일 삭제
+     * 원본 로그 파일 삭제
      */
     public void deleteFile() {
         log.info("deleteFile(): executed.");
 
         List<File> deleteTargetFiles = Collections.emptyList();
 
-        for (String dir : getSplitedStrings(backupDir, ";")) {
+        for (String dir : getSplitedStrings(originDir, ";")) {
             File directory = new File(getSlashEndedString(dir));
             deleteTargetFiles = Stream
-                    .concat(deleteTargetFiles.stream(), getFilesToHandle(directory, backupDay).stream())
+                    .concat(deleteTargetFiles.stream(), getFilesToHandle(directory, originHoldDay).stream())
                     .toList();
         }
 
@@ -91,6 +102,40 @@ public class FileHandler {
 
         log.info("deleteFile(): delete {} log file(s)", deleteTargetFiles.size());
         log.info("deleteFile(): deleted files {}", deleteTargetFiles.toString());
+    }
+
+    /**
+     * 백업 파일 최종 수정일 기준, 백업 디렉토리 생성 후 백업 디렉토리명 반환
+     * 
+     * @param backupFile
+     * @return
+     */
+    public String getBackupDir(File backupFile) {
+        String rootDirPath = getSlashEndedString(backupDir);
+
+        Calendar lastModifiedDate = Calendar.getInstance();
+        lastModifiedDate.setTimeInMillis(backupFile.lastModified());
+        String year = "" + lastModifiedDate.get(Calendar.YEAR);
+        String month = "" + lastModifiedDate.get(Calendar.MONTH);
+        String date = "" + lastModifiedDate.get(Calendar.DATE);
+
+        log.debug("last modified, year:{}, month:{}, day:{}", year, month, date);
+
+        String backupDirPath = switch (backupDirPart.toUpperCase()) {
+            case "YEAR" -> rootDirPath + year;
+            case "MONTH" -> rootDirPath + year + "/" + month;
+            case "DATE" -> rootDirPath + year + "/" + month + "/" + date;
+            default -> rootDirPath + year + "/" + month + "/" + date;
+        };
+
+        backupDirPath = getSlashEndedString(backupDirPath);
+
+        File backupDir = new File(backupDirPath);
+        if (!backupDir.exists()) {
+            backupDir.mkdirs();
+        }
+
+        return backupDirPath;
     }
 
     /**

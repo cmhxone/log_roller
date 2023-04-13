@@ -10,7 +10,7 @@ public class App {
     public static void main(String[] args) {
         FileHandler handler = FileHandler.getInstance();
 
-        handler.moveFile();
+        handler.copyFile();
         handler.deleteFile();
     }
 }
